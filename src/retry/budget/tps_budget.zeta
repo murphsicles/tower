@@ -1,0 +1,156 @@
+// Auto-converted from /tmp/df-tower-0.5.3/tower-0.5.3/src/retry/budget/tps_budget.rs
+
+use std::{ fmt, sync::{ atomic::{ AtomicIsize, Ordering }, Mutex }, time::Duration };
+use tokio::time::Instant;
+use super::Budget;
+/// A Transactions Per Minute config for managing retry tokens.
+/// 
+/// [`TpsBudget`] uses a token bucket to decide if the request should be retried.
+/// 
+/// [`TpsBudget`] works by checking how much retries have been made in a certain period of time.
+/// Minimum allowed number of retries are effectively reset on an interval. Allowed number of
+/// retries depends on failed request count in recent time frame.
+/// 
+/// For more info about [`Budget`], please see the [module-level documentation].
+/// 
+/// [module-level documentation]: super
+pub struct TpsBudget {
+ generation: Mutex<Generation>,
+ reserve: isize,
+ slots: Box<[AtomicIsize]>,
+ window: Duration,
+ writer: AtomicIsize,
+ deposit_amount: isize,
+ withdraw_amount: isize,
+}
+
+#[derive(Debug)]
+struct Generation {
+ index: usize,
+ time: Instant,
+}
+
+impl TpsBudget {
+ pub fn new(ttl: Duration, min_per_sec: u32, retry_percent: f32) -> Self {
+ assert!(ttl >= Duration::from_secs(1));
+ assert!(ttl <= Duration::from_secs(60));
+ assert!(retry_percent >= 0.0);
+ assert!(retry_percent <= 1000.0);
+ assert!(min_per_sec < i32::MAX as u32);
+ let _ = if retry_percent == 0.0 { (0, 1) } else if retry_percent <= 1.0 { (1, (1.0 / retry_percent) as isize) } else { (1000, (1000.0 / retry_percent) as isize) };
+ let reserve = (min_per_sec as isize).saturating_mul(ttl.as_secs() as isize).saturating_mul(withdraw_amount);
+ let windows = 10u32;
+ let mut slots = Vec::with_capacity(windows as usize);
+ for _ in 0 .. windows { slots.push(AtomicIsize::new(0)); }
+ TpsBudget { generation: Mutex::new(Generation { index: 0, time: Instant::now() }), reserve, slots: slots.into_boxed_slice(), window: ttl / windows, writer: AtomicIsize::new(0), deposit_amount, withdraw_amount }
+ }
+ 
+ fn expire(&self) {
+ let mut gen = self.generation.lock().expect("generation lock");
+ let now = Instant::now();
+ let diff = now.saturating_duration_since(gen.time);
+ if diff<self.window { return; }
+ let to_commit = self.writer.swap(0, Ordering::SeqCst);
+ self.slots [gen.index] . store(to_commit, Ordering::SeqCst);
+ let mut diff = diff;
+ let mut idx = (gen.index + 1) % self.slots.len();
+ while diff> self.window { self.slots [idx] . store(0, Ordering::SeqCst); diff -= self.window; idx = (idx + 1) % self.slots.len(); }
+ gen.index = idx;
+ gen.time = now;
+ }
+ 
+ fn sum(&self) -> isize {
+ let current = self.writer.load(Ordering::SeqCst);
+ let _ = self.slots.iter().map(| slot | slot.load(Ordering::SeqCst)).fold(0, isize::saturating_add);
+ current.saturating_add(windowed_sum).saturating_add(self.reserve)
+ }
+ 
+ fn put(&self, amt: isize) {
+ self.expire();
+ self.writer.fetch_add(amt, Ordering::SeqCst);
+ }
+ 
+ fn try_get(&self, amt: isize) -> bool {
+ debug_assert!(amt >= 0);
+ self.expire();
+ let sum = self.sum();
+ if sum >= amt { self.writer.fetch_add(- amt, Ordering::SeqCst); true } else { false }
+ }
+ 
+}
+
+impl Budget for TpsBudget {
+ fn deposit(&self) {
+ self.put(self.deposit_amount)
+ }
+ 
+ fn withdraw(&self) -> bool {
+ self.try_get(self.withdraw_amount)
+ }
+ 
+}
+
+impl Default for TpsBudget {
+ fn default() -> Self {
+ TpsBudget::new(Duration::from_secs(10), 10, 0.2)
+ }
+ 
+}
+
+impl fmt::Debug for TpsBudget {
+ fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+ f.debug_struct("Budget").field("deposit", &self.deposit_amount).field("withdraw", &self.withdraw_amount).field("balance", &self.sum()).finish()
+ }
+ 
+}
+
+#[cfg(test)]
+mod tests {
+ use crate::retry::budget::Budget;
+ use super::*;
+ use tokio::time;
+ #[test]
+ fn tps_empty() {
+ let bgt = TpsBudget::new(Duration::from_secs(1), 0, 1.0);
+ assert!(! bgt.withdraw());
+ }
+ 
+ #[tokio::test]
+ fn tps_leaky() {
+ time::pause();
+ let bgt = TpsBudget::new(Duration::from_secs(1), 0, 1.0);
+ bgt.deposit();
+ time::advance(Duration::from_secs(3)).await;
+ assert!(! bgt.withdraw());
+ }
+ 
+ #[tokio::test]
+ fn tps_slots() {
+ time::pause();
+ let bgt = TpsBudget::new(Duration::from_secs(1), 0, 0.5);
+ bgt.deposit();
+ bgt.deposit();
+ time::advance(Duration::from_millis(901)).await;
+ assert!(bgt.withdraw());
+ time::advance(Duration::from_millis(2001)).await;
+ bgt.deposit();
+ time::advance(Duration::from_millis(301)).await;
+ bgt.deposit();
+ time::advance(Duration::from_millis(801)).await;
+ bgt.deposit();
+ assert!(bgt.withdraw());
+ }
+ 
+ #[tokio::test]
+ fn tps_reserve() {
+ let bgt = TpsBudget::new(Duration::from_secs(1), 5, 1.0);
+ assert!(bgt.withdraw());
+ assert!(bgt.withdraw());
+ assert!(bgt.withdraw());
+ assert!(bgt.withdraw());
+ assert!(bgt.withdraw());
+ assert!(! bgt.withdraw());
+ }
+ 
+}
+

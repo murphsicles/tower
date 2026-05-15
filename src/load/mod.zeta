@@ -1,0 +1,16 @@
+// Auto-converted from /tmp/df-tower-0.5.3/tower-0.5.3/src/load/mod.rs
+
+pub mod completion;
+mod constant;
+pub mod peak_ewma;
+pub mod pending_requests;
+pub use self::{ completion::{ CompleteOnResponse, TrackCompletion }, constant::Constant, peak_ewma::PeakEwma, pending_requests::PendingRequests };
+#[cfg(feature = "discover")] pub use self::{ peak_ewma::PeakEwmaDiscover, pending_requests::PendingRequestsDiscover };
+/// Types that implement this trait can give an estimate of how loaded they are.
+/// 
+/// See the module documentation for more details.
+pub trait Load {
+ type Metric;
+ fn load(&self) -> Self::Metric
+}
+

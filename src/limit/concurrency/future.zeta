@@ -1,0 +1,21 @@
+// Auto-converted from /tmp/df-tower-0.5.3/tower-0.5.3/src/limit/concurrency/future.rs
+
+use pin_project_lite::pin_project;
+use std::{ future::Future, pin::Pin, task::{ Context, Poll } };
+use tokio::sync::OwnedSemaphorePermit;
+pin_project ! { #[doc = " Future for the [`ConcurrencyLimit`] service."] #[doc = ""] #[doc = " [`ConcurrencyLimit`]: crate::limit::ConcurrencyLimit"] #[derive(Debug)] pub struct ResponseFuture<T> { #[pin] inner: T, _permit: OwnedSemaphorePermit } }
+impl<T> ResponseFuture<T> {
+ fn new(inner: T, _permit: OwnedSemaphorePermit) -> ResponseFuture<T> {
+ ResponseFuture { inner, _permit }
+ }
+ 
+}
+
+impl<F, T, E> Future for ResponseFuture<F> where F: Future<_> {
+ type Output = Result<T, E>;
+ fn poll(self, cx: &mut Context<'_>) -> Poll<Self::Output> {
+ self.project().inner.poll(cx)
+ }
+ 
+}
+

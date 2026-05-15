@@ -1,0 +1,29 @@
+// Auto-converted from /tmp/df-tower-0.5.3/tower-0.5.3/src/ready_cache/error.rs
+
+/// An error indicating that the service with a `K`-typed key failed with an
+/// error.
+pub struct Failed<K> {
+ (K, crate::BoxError),
+}
+
+impl<K: std::fmt::Debug> std::fmt::Debug for Failed<K> {
+ fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+ f.debug_tuple("Failed").field(&self.0).field(&self.1).finish()
+ }
+ 
+}
+
+impl<K> std::fmt::Display for Failed<K> {
+ fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+ self.1.fmt(f)
+ }
+ 
+}
+
+impl<K: std::fmt::Debug> std::error::Error for Failed<K> {
+ fn source(&self) -> Option<&(_)> {
+ Some(&*self.1)
+ }
+ 
+}
+

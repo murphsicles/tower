@@ -1,0 +1,8 @@
+// Auto-converted from /tmp/df-tower-0.5.3/tower-0.5.3/src/util/boxed/mod.rs
+
+mod layer;
+mod layer_clone;
+mod layer_clone_sync;
+mod sync;
+mod unsync;
+#[allow(unreachable_pub)] pub use self::{ layer::BoxLayer, layer_clone::BoxCloneServiceLayer, layer_clone_sync::BoxCloneSyncServiceLayer, sync::BoxService, unsync::UnsyncBoxService };

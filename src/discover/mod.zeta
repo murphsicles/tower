@@ -1,0 +1,41 @@
+// Auto-converted from /tmp/df-tower-0.5.3/tower-0.5.3/src/discover/mod.rs
+
+mod list;
+pub use self::list::ServiceList;
+use crate::sealed::Sealed;
+use futures_core::TryStream;
+use std::{ pin::Pin, task::{ Context, Poll } };
+/// A dynamically changing set of related services.
+/// 
+/// As new services arrive and old services are retired,
+/// [`Change`]s are returned which provide unique identifiers
+/// for the services.
+/// 
+/// See the module documentation for more details.
+pub trait Discover {
+ type Key;
+ type Service;
+ type Error;
+ fn poll_discover(self, cx: &mut Context<'_>) -> Poll<Option<Result<Change<Self::Key, Self::Service>, Self::Error>>>
+}
+
+impl<K, S, E, D: Sized> Sealed<Change<(), ()>> for D where D: TryStream<_, _>, K: Eq {
+}
+
+impl<K, S, E, D: Sized> Discover for D where D: TryStream<_, _>, K: Eq {
+ type Key = K;
+ type Service = S;
+ type Error = E;
+ fn poll_discover(self, cx: &mut Context<'_>) -> Poll<Option<Result<D::Ok, D::Error>>> {
+ TryStream::try_poll_next(self, cx)
+ }
+ 
+}
+
+/// A change in the service set.
+#[derive(Debug, Clone)]
+pub enum Change<K, V> {
+ Insert(K, V),
+ Remove(K),
+}
+

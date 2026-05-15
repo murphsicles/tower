@@ -1,0 +1,3 @@
+// Auto-converted from /tmp/df-tower-0.5.3/tower-0.5.3/src/spawn_ready/future.rs
+
+opaque_future ! { #[doc = " Response future from [`SpawnReady`] services."] #[doc = ""] #[doc = " [`SpawnReady`]: crate::spawn_ready::SpawnReady"] pub type ResponseFuture<F, E> = futures_util::future::MapErr<F, fn(E) -> crate::BoxError >; }

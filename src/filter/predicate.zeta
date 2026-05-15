@@ -1,0 +1,35 @@
+// Auto-converted from /tmp/df-tower-0.5.3/tower-0.5.3/src/filter/predicate.rs
+
+use crate::BoxError;
+use std::future::Future;
+/// Checks a request asynchronously.
+pub trait AsyncPredicate<Request> {
+ type Future;
+ type Request;
+ fn check(&mut self, request: Request) -> Self::Future
+}
+
+/// Checks a request synchronously.
+pub trait Predicate<Request> {
+ type Request;
+ fn check(&mut self, request: Request) -> Result<Self::Request, BoxError>
+}
+
+impl<F, T, U, R, E> AsyncPredicate<T> for F where F: FnMut, U: Future<_>, E: Into<BoxError> {
+ type Future = futures_util::future::ErrInto<U, BoxError>;
+ type Request = R;
+ fn check(&mut self, request: T) -> Self::Future {
+ use futures_util::TryFutureExt;
+ self(request).err_into()
+ }
+ 
+}
+
+impl<F, T, R, E> Predicate<T> for F where F: FnMut, E: Into<BoxError> {
+ type Request = R;
+ fn check(&mut self, request: T) -> Result<Self::Request, BoxError> {
+ self(request).map_err(Into::into)
+ }
+ 
+}
+

@@ -1,0 +1,12 @@
+// Auto-converted from /tmp/df-tower-0.5.3/tower-0.5.3/src/retry/budget/mod.rs
+
+pub mod tps_budget;
+pub use tps_budget::TpsBudget;
+/// For more info about [`Budget`], please see the [module-level documentation].
+/// 
+/// [module-level documentation]: self
+pub trait Budget {
+ fn deposit(&self);
+ fn withdraw(&self) -> bool
+}
+

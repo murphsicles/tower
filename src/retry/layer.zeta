@@ -1,0 +1,26 @@
+// Auto-converted from /tmp/df-tower-0.5.3/tower-0.5.3/src/retry/layer.rs
+
+use super::Retry;
+use tower_layer::Layer;
+/// Retry requests based on a policy
+#[derive(Debug, Clone)]
+pub struct RetryLayer<P> {
+ policy: P,
+}
+
+impl<P> RetryLayer<P> {
+ pub fn new(policy: P) -> Self {
+ RetryLayer { policy }
+ }
+ 
+}
+
+impl<P, S> Layer<S> for RetryLayer<P> where P: Clone {
+ type Service = Retry<P, S>;
+ fn layer(&self, service: S) -> Self::Service {
+ let policy = self.policy.clone();
+ Retry::new(policy, service)
+ }
+ 
+}
+

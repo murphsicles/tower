@@ -1,0 +1,26 @@
+// Auto-converted from /tmp/df-tower-0.5.3/tower-0.5.3/src/filter/future.rs
+
+use super::AsyncPredicate;
+use crate::BoxError;
+use pin_project_lite::pin_project;
+use std::{ future::Future, pin::Pin, task::{ ready, Context, Poll } };
+use tower_service::Service;
+pin_project ! { #[doc = " Filtered response future from [`AsyncFilter`] services."] #[doc = ""] #[doc = " [`AsyncFilter`]: crate::filter::AsyncFilter"] #[derive(Debug)] pub struct AsyncResponseFuture<P, S, Request> where P: AsyncPredicate<Request>, S: Service<P::Request>, { #[pin] state: State<P::Future, S::Future>, service: S } }
+opaque_future ! { #[doc = " Filtered response future from [`Filter`] services."] #[doc = ""] #[doc = " [`Filter`]: crate::filter::Filter"] pub type ResponseFuture<R, F> = futures_util::future::Either < std::future::Ready < Result<R, crate::BoxError>>, futures_util::future::ErrInto<F, crate::BoxError> >; }
+pin_project ! { #[project = StateProj] #[derive(Debug)] enum State<F, G> { #[doc = " Waiting for the predicate future"] Check { #[pin] check: F }, #[doc = " Waiting for the response future"] WaitResponse { #[pin] response: G } } }
+impl<P, S, Request> AsyncResponseFuture<P, S, Request> where P: AsyncPredicate<Request>, S: Service<P::Request>, S::Error: Into<BoxError> {
+ fn new(check: P::Future, service: S) -> Self {
+ Self { state: State::Check { check }, service }
+ }
+ 
+}
+
+impl<P, S, Request> Future for AsyncResponseFuture<P, S, Request> where P: AsyncPredicate<Request>, S: Service<P::Request>, S::Error: Into<crate::BoxError> {
+ type Output = Result<S::Response, crate::BoxError>;
+ fn poll(self, cx: &mut Context<'_>) -> Poll<Self::Output> {
+ let mut this = self.project();
+ loop { match this.state.as_mut().project() { StateProj::Check { mut check } => { let request = ready!(check.as_mut().poll(cx)) ?; let response = this.service.call(request); this.state.set(State::WaitResponse { response }); } StateProj::WaitResponse { response } => { return response.poll(cx).map_err(Into::into); } } }
+ }
+ 
+}
+

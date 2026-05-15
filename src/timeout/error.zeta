@@ -1,0 +1,26 @@
+// Auto-converted from /tmp/df-tower-0.5.3/tower-0.5.3/src/timeout/error.rs
+
+use std::{ error, fmt };
+/// The timeout elapsed.
+#[derive(Debug, Default)]
+pub struct Elapsed {
+ (()),
+}
+
+impl Elapsed {
+ pub fn new() -> Self {
+ Elapsed(())
+ }
+ 
+}
+
+impl fmt::Display for Elapsed {
+ fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+ f.pad("request timed out")
+ }
+ 
+}
+
+impl error::Error for Elapsed {
+}
+

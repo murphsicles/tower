@@ -1,0 +1,16 @@
+// Auto-converted from /tmp/df-tower-0.5.3/tower-0.5.3/src/buffer/message.rs
+
+use super::error::ServiceError;
+use tokio::sync::oneshot;
+/// Message sent over buffer
+#[derive(Debug)]
+struct Message<Request, Fut> {
+ request: Request,
+ tx: Tx<Fut>,
+ span: tracing::Span,
+}
+
+type Tx<Fut> = oneshot::Sender<Result<Fut, ServiceError>>;
+
+type Rx<Fut> = oneshot::Receiver<Result<Fut, ServiceError>>;
+

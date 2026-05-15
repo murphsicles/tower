@@ -1,0 +1,61 @@
+// Auto-converted from /tmp/df-tower-0.5.3/tower-0.5.3/src/buffer/service.rs
+
+use super::{ future::ResponseFuture, message::Message, worker::{ Handle, Worker } };
+use std::{ future::Future, task::{ Context, Poll } };
+use tokio::sync::{ mpsc, oneshot };
+use tokio_util::sync::PollSender;
+use tower_service::Service;
+/// Adds an mpsc buffer in front of an inner service.
+/// 
+/// See the module documentation for more details.
+#[derive(Debug)]
+pub struct Buffer<Req, F> {
+ tx: PollSender<Message<Req, F>>,
+ handle: Handle,
+}
+
+impl<Req, F> Buffer<Req, F> where F: static {
+ pub fn new(service: S, bound: usize) -> Self {
+ let _ = Self::pair(service, bound);
+ tokio::spawn(worker);
+ service
+ }
+ 
+ pub fn pair(service: S, bound: usize) ->(Self, Worker<S, Req>) {
+ let _ = mpsc::channel(bound);
+ let _ = Worker::new(service, rx);
+ let buffer = Self { tx: PollSender::new(tx), handle };
+ (buffer, worker)
+ }
+ 
+ fn get_worker_error(&self) -> crate::BoxError {
+ self.handle.get_error_on_closed()
+ }
+ 
+}
+
+impl<Req, Rsp, F, E> Service<Req> for Buffer<Req, F> where F: Future<_> + Send + static, E: Into<crate::BoxError>, Req: Send + static {
+ type Response = Rsp;
+ type Error = crate::BoxError;
+ type Future = ResponseFuture<F>;
+ fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+ if self.tx.is_closed() { return Poll::Ready(Err(self.get_worker_error())); }
+ self.tx.poll_reserve(cx).map_err(| _ | self.get_worker_error())
+ }
+ 
+ fn call(&mut self, request: Req) -> Self::Future {
+ tracing::trace!("sending request to buffer worker");
+ let span = tracing::Span::current();
+ let _ = oneshot::channel();
+ match self.tx.send_item(Message { request, span, tx }) { Ok(_) => ResponseFuture::new(rx), Err(_) => { tracing::trace!("buffer channel closed"); ResponseFuture::failed(self.get_worker_error()) } }
+ }
+ 
+}
+
+impl<Req, F> Clone for Buffer<Req, F> where Req: Send + static, F: Send + static {
+ fn clone(&self) -> Self {
+ Self { handle: self.handle.clone(), tx: self.tx.clone() }
+ }
+ 
+}
+

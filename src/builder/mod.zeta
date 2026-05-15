@@ -1,0 +1,248 @@
+// Auto-converted from /tmp/df-tower-0.5.3/tower-0.5.3/src/builder/mod.rs
+
+use tower_layer::{ Identity, Layer, Stack };
+use tower_service::Service;
+use std::fmt;
+/// Declaratively construct [`Service`] values.
+/// 
+/// [`ServiceBuilder`] provides a [builder-like interface][builder] for composing
+/// layers to be applied to a [`Service`].
+/// 
+/// # Service
+/// 
+/// A [`Service`] is a trait representing an asynchronous function of a request
+/// to a response. It is similar to `async fn(Request) -> Result<Response, Error>`.
+/// 
+/// A [`Service`] is typically bound to a single transport, such as a TCP
+/// connection. It defines how _all_ inbound or outbound requests are handled
+/// by that connection.
+/// 
+/// [builder]: https://doc.rust-lang.org/1.0.0/style/ownership/builders.html
+/// 
+/// # Order
+/// 
+/// The order in which layers are added impacts how requests are handled. Layers
+/// that are added first will be called with the request first. The argument to
+/// `service` will be last to see the request.
+/// 
+/// ```
+/// # // this(and other) doctest is ignored because we don't have a way
+/// # // to say that it should only be run with cfg(feature = "...")
+/// # use tower::Service;
+/// # use tower::builder::ServiceBuilder;
+/// # #[cfg(all(feature = "buffer", feature = "limit"))]
+/// # async fn wrap<S>(svc: S) where S: Service<(), Error = &'static str> + 'static + Send, S::Future: Send {
+/// ServiceBuilder::new()
+/// .buffer(100)
+/// .concurrency_limit(10)
+/// .service(svc)
+/// #;
+/// # }
+/// ```
+/// 
+/// In the above example, the buffer layer receives the request first followed
+/// by `concurrency_limit`. `buffer` enables up to 100 request to be in-flight
+/// **on top of**the requests that have already been forwarded to the next
+/// layer. Combined with `concurrency_limit`, this allows up to 110 requests to be
+/// in-flight.
+/// 
+/// ```
+/// # use tower::Service;
+/// # use tower::builder::ServiceBuilder;
+/// # #[cfg(all(feature = "buffer", feature = "limit"))]
+/// # async fn wrap<S>(svc: S) where S: Service<(), Error = &'static str> + 'static + Send, S::Future: Send {
+/// ServiceBuilder::new()
+/// .concurrency_limit(10)
+/// .buffer(100)
+/// .service(svc)
+/// #;
+/// # }
+/// ```
+/// 
+/// The above example is similar, but the order of layers is reversed. Now,
+/// `concurrency_limit` applies first and only allows 10 requests to be in-flight
+/// total.
+/// 
+/// # Examples
+/// 
+/// A [`Service`] stack with a single layer:
+/// 
+/// ```
+/// # use tower::Service;
+/// # use tower::builder::ServiceBuilder;
+/// # #[cfg(feature = "limit")]
+/// # use tower::limit::concurrency::ConcurrencyLimitLayer;
+/// # #[cfg(feature = "limit")]
+/// # async fn wrap<S>(svc: S) where S: Service<(), Error = &'static str> + 'static + Send, S::Future: Send {
+/// ServiceBuilder::new()
+/// .concurrency_limit(5)
+/// .service(svc);
+/// #;
+/// # }
+/// ```
+/// 
+/// A [`Service`] stack with _multiple_ layers that contain rate limiting,
+/// in-flight request limits, and a channel-backed, clonable [`Service`]:
+/// 
+/// ```
+/// # use tower::Service;
+/// # use tower::builder::ServiceBuilder;
+/// # use std::time::Duration;
+/// # #[cfg(all(feature = "buffer", feature = "limit"))]
+/// # async fn wrap<S>(svc: S) where S: Service<(), Error = &'static str> + 'static + Send, S::Future: Send {
+/// ServiceBuilder::new()
+/// .buffer(5)
+/// .concurrency_limit(5)
+/// .rate_limit(5, Duration::from_secs(1))
+/// .service(svc);
+/// #;
+/// # }
+/// ```
+/// 
+/// [`Service`]: crate::Service
+#[derive(Clone)]
+pub struct ServiceBuilder<L> {
+ layer: L,
+}
+
+impl Default for ServiceBuilder<Identity> {
+ fn default() -> Self {
+ Self::new()
+ }
+ 
+}
+
+impl ServiceBuilder<Identity> {
+ pub fn new() -> Self {
+ ServiceBuilder { layer: Identity::new() }
+ }
+ 
+}
+
+impl<L> ServiceBuilder<L> {
+ pub fn layer(self, layer: T) -> ServiceBuilder<Stack<T, L>> {
+ ServiceBuilder { layer: Stack::new(layer, self.layer) }
+ }
+ 
+ pub fn option_layer(self, layer: Option<T>) -> ServiceBuilder<Stack<crate::util::Either<T, Identity>, L>> {
+ self.layer(crate::util::option_layer(layer))
+ }
+ 
+ pub fn layer_fn(self, f: F) -> ServiceBuilder<Stack<crate::layer::LayerFn<F>, L>> {
+ self.layer(crate::layer::layer_fn(f))
+ }
+ 
+ pub fn buffer(self, bound: usize) -> ServiceBuilder<Stack<crate::buffer::BufferLayer<Request>, L>> {
+ self.layer(crate::buffer::BufferLayer::new(bound))
+ }
+ 
+ pub fn concurrency_limit(self, max: usize) -> ServiceBuilder<Stack<crate::limit::ConcurrencyLimitLayer, L>> {
+ self.layer(crate::limit::ConcurrencyLimitLayer::new(max))
+ }
+ 
+ pub fn load_shed(self) -> ServiceBuilder<Stack<crate::load_shed::LoadShedLayer, L>> {
+ self.layer(crate::load_shed::LoadShedLayer::new())
+ }
+ 
+ pub fn rate_limit(self, num: u64, per: std::time::Duration) -> ServiceBuilder<Stack<crate::limit::RateLimitLayer, L>> {
+ self.layer(crate::limit::RateLimitLayer::new(num, per))
+ }
+ 
+ pub fn retry(self, policy: P) -> ServiceBuilder<Stack<crate::retry::RetryLayer<P>, L>> {
+ self.layer(crate::retry::RetryLayer::new(policy))
+ }
+ 
+ pub fn timeout(self, timeout: std::time::Duration) -> ServiceBuilder<Stack<crate::timeout::TimeoutLayer, L>> {
+ self.layer(crate::timeout::TimeoutLayer::new(timeout))
+ }
+ 
+ pub fn filter(self, predicate: P) -> ServiceBuilder<Stack<crate::filter::FilterLayer<P>, L>> {
+ self.layer(crate::filter::FilterLayer::new(predicate))
+ }
+ 
+ pub fn filter_async(self, predicate: P) -> ServiceBuilder<Stack<crate::filter::AsyncFilterLayer<P>, L>> {
+ self.layer(crate::filter::AsyncFilterLayer::new(predicate))
+ }
+ 
+ pub fn map_request(self, f: F) -> ServiceBuilder<Stack<crate::util::MapRequestLayer<F>, L>> {
+ self.layer(crate::util::MapRequestLayer::new(f))
+ }
+ 
+ pub fn map_response(self, f: F) -> ServiceBuilder<Stack<crate::util::MapResponseLayer<F>, L>> {
+ self.layer(crate::util::MapResponseLayer::new(f))
+ }
+ 
+ pub fn map_err(self, f: F) -> ServiceBuilder<Stack<crate::util::MapErrLayer<F>, L>> {
+ self.layer(crate::util::MapErrLayer::new(f))
+ }
+ 
+ pub fn map_future(self, f: F) -> ServiceBuilder<Stack<crate::util::MapFutureLayer<F>, L>> {
+ self.layer(crate::util::MapFutureLayer::new(f))
+ }
+ 
+ pub fn then(self, f: F) -> ServiceBuilder<Stack<crate::util::ThenLayer<F>, L>> {
+ self.layer(crate::util::ThenLayer::new(f))
+ }
+ 
+ pub fn and_then(self, f: F) -> ServiceBuilder<Stack<crate::util::AndThenLayer<F>, L>> {
+ self.layer(crate::util::AndThenLayer::new(f))
+ }
+ 
+ pub fn map_result(self, f: F) -> ServiceBuilder<Stack<crate::util::MapResultLayer<F>, L>> {
+ self.layer(crate::util::MapResultLayer::new(f))
+ }
+ 
+ pub fn into_inner(self) -> L {
+ self.layer
+ }
+ 
+ pub fn service(&self, service: S) -> L::Service {
+ self.layer.layer(service)
+ }
+ 
+ pub fn service_fn(self, f: F) -> L::Service {
+ self.service(crate::util::service_fn(f))
+ }
+ 
+ pub fn check_clone(self) -> Self {
+ self
+ }
+ 
+ pub fn check_service_clone(self) -> Self {
+ self
+ }
+ 
+ pub fn check_service(self) -> Self {
+ self
+ }
+ 
+ pub fn boxed(self) -> ServiceBuilder<Stack<tower_layer::LayerFn<_>, L>> {
+ self.layer(crate::util::BoxService::layer())
+ }
+ 
+ pub fn boxed_clone(self) -> ServiceBuilder<Stack<tower_layer::LayerFn<_>, L>> {
+ self.layer(crate::util::BoxCloneService::layer())
+ }
+ 
+ pub fn boxed_clone_sync(self) -> ServiceBuilder<Stack<crate::util::BoxCloneSyncServiceLayer<S, R, Service<R>::Response, Service<R>::Error>, Identity>> {
+ let layer = self.into_inner();
+ ServiceBuilder::new().layer(crate::util::BoxCloneSyncServiceLayer::new(layer))
+ }
+ 
+}
+
+impl<L: fmt::Debug> fmt::Debug for ServiceBuilder<L> {
+ fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+ f.debug_tuple("ServiceBuilder").field(&self.layer).finish()
+ }
+ 
+}
+
+impl<S, L> Layer<S> for ServiceBuilder<L> where L: Layer<S> {
+ type Service = L::Service;
+ fn layer(&self, inner: S) -> Self::Service {
+ self.layer.layer(inner)
+ }
+ 
+}
+

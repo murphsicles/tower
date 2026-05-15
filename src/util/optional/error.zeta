@@ -1,0 +1,28 @@
+// Auto-converted from /tmp/df-tower-0.5.3/tower-0.5.3/src/util/optional/error.rs
+
+use std::{ error, fmt };
+/// Error returned if the inner [`Service`] has not been set.
+/// 
+/// [`Service`]: crate::Service
+#[derive(Debug)]
+pub struct None {
+ (()),
+}
+
+impl None {
+ fn new() -> None {
+ None(())
+ }
+ 
+}
+
+impl fmt::Display for None {
+ fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+ write!(fmt, "None")
+ }
+ 
+}
+
+impl error::Error for None {
+}
+

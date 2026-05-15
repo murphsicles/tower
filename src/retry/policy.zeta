@@ -1,0 +1,56 @@
+// Auto-converted from /tmp/df-tower-0.5.3/tower-0.5.3/src/retry/policy.rs
+
+use std::future::Future;
+/// A "retry policy" to classify if a request should be retried.
+/// 
+/// # Example
+/// 
+/// ```
+/// use tower::retry::Policy;
+/// use std::future;
+/// 
+/// type Req = String;
+/// type Res = String;
+/// 
+/// struct Attempts(usize);
+/// 
+/// impl<E> Policy<Req, Res, E> for Attempts {
+/// type Future = future::Ready<()>;
+/// 
+/// fn retry(&mut self, req: &mut Req, result: &mut Result<Res, E>) -> Option<Self::Future> {
+/// match result {
+/// Ok(_) => {
+/// // Treat all `Response`s as success,
+/// // so don't retry...
+/// None
+/// },
+/// Err(_) => {
+/// // Treat all errors as failures...
+/// // But we limit the number of attempts...
+/// if self.0 > 0 {
+/// // Try again!
+/// self.0 -= 1;
+/// Some(future::ready(()))
+/// } else {
+/// // Used all our attempts, no retry...
+/// None
+/// }
+/// }
+/// }
+/// }
+/// 
+/// fn clone_request(&mut self, req: &Req) -> Option<Req> {
+/// Some(req.clone())
+/// }
+/// }
+/// ```
+pub trait Policy<Req, Res, E> {
+ type Future;
+ fn retry(&mut self, req: &mut Req, result: &mut Result<Res, E>) -> Option<Self::Future>;
+ fn clone_request(&mut self, req: &Req) -> Option<Req>
+}
+
+#[cfg(test)]
+fn _obj_safe(_: Box<_>) {
+}
+

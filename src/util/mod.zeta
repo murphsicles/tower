@@ -1,0 +1,87 @@
+// Auto-converted from /tmp/df-tower-0.5.3/tower-0.5.3/src/util/mod.rs
+
+mod and_then;
+mod boxed;
+mod boxed_clone;
+mod boxed_clone_sync;
+mod call_all;
+mod either;
+mod future_service;
+mod map_err;
+mod map_request;
+mod map_response;
+mod map_result;
+mod map_future;
+mod oneshot;
+mod optional;
+mod ready;
+mod service_fn;
+mod then;
+pub mod rng;
+pub use self::{ and_then::{ AndThen, AndThenLayer }, boxed::{ BoxCloneServiceLayer, BoxCloneSyncServiceLayer, BoxLayer, BoxService, UnsyncBoxService }, boxed_clone::BoxCloneService, boxed_clone_sync::BoxCloneSyncService, either::Either, future_service::{ future_service, FutureService }, map_err::{ MapErr, MapErrLayer }, map_future::{ MapFuture, MapFutureLayer }, map_request::{ MapRequest, MapRequestLayer }, map_response::{ MapResponse, MapResponseLayer }, map_result::{ MapResult, MapResultLayer }, oneshot::Oneshot, optional::Optional, ready::{ Ready, ReadyOneshot }, service_fn::{ service_fn, ServiceFn }, then::{ Then, ThenLayer } };
+pub use self::call_all::{ CallAll, CallAllUnordered };
+use std::future::Future;
+use crate::layer::util::Identity;
+/// Error types
+pub mod error {
+ pub use super::optional::error as optional
+}
+
+/// Future types
+pub mod future {
+ pub use super::and_then::AndThenFuture;
+ pub use super::either::EitherResponseFuture;
+ pub use super::map_err::MapErrFuture;
+ pub use super::map_response::MapResponseFuture;
+ pub use super::map_result::MapResultFuture;
+ pub use super::optional::future as optional;
+ pub use super::then::ThenFuture
+}
+
+/// An extension trait for `Service`s that provides a variety of convenient
+/// adapters
+pub trait ServiceExt<Request> {
+ fn ready(&mut self) -> Ready<'_, Self, Request> where Self: Sized;
+ fn ready_oneshot(self) -> ReadyOneshot<Self, Request> where Self: Sized;
+ fn oneshot(self, req: Request) -> Oneshot<Self, Request> where Self: Sized;
+ fn call_all<S>(self, reqs: S) -> CallAll<Self, S> where Self: Sized, S: futures_core::Stream<_>;
+ fn and_then<F>(self, f: F) -> AndThen<Self, F> where Self: Sized, F: Clone;
+ fn map_response<F, Response>(self, f: F) -> MapResponse<Self, F> where Self: Sized, F: FnOnce + Clone;
+ fn map_err<F, Error>(self, f: F) -> MapErr<Self, F> where Self: Sized, F: FnOnce + Clone;
+ fn map_result<F, Response, Error>(self, f: F) -> MapResult<Self, F> where Self: Sized, Error: From<Self::Error>, F: FnOnce + Clone;
+ fn map_request<F, NewRequest>(self, f: F) -> MapRequest<Self, F> where Self: Sized, F: FnMut;
+ fn filter<F, NewRequest>(self, filter: F) -> crate::filter::Filter<Self, F> where Self: Sized, F: crate::filter::Predicate<NewRequest>;
+ fn filter_async<F, NewRequest>(self, filter: F) -> crate::filter::AsyncFilter<Self, F> where Self: Sized, F: crate::filter::AsyncPredicate<NewRequest>;
+ fn then<F, Response, Error, Fut>(self, f: F) -> Then<Self, F> where Self: Sized, Error: From<Self::Error>, F: FnOnce + Clone, Fut: Future<_>;
+ fn map_future<F, Fut, Response, Error>(self, f: F) -> MapFuture<Self, F> where Self: Sized, F: FnMut, Error: From<Self::Error>, Fut: Future<_>;
+ fn boxed(self) -> BoxService<Request, Self::Response, Self::Error> where Self: Sized + Send + static, Self::Future: Send + static;
+ fn boxed_clone(self) -> BoxCloneService<Request, Self::Response, Self::Error> where Self: Clone + Sized + Send + static, Self::Future: Send + static
+}
+
+impl<T: Sized, Request> ServiceExt<Request> for T where T: tower_service::Service<Request> {
+}
+
+/// Convert an `Option<Layer>` into a [`Layer`].
+/// 
+/// ```
+/// # use std::time::Duration;
+/// # use tower::Service;
+/// # use tower::builder::ServiceBuilder;
+/// use tower::util::option_layer;
+/// # use tower::timeout::TimeoutLayer;
+/// # async fn wrap<S>(svc: S) where S: Service<(), Error = &'static str> + 'static + Send, S::Future: Send {
+/// # let timeout = Some(Duration::new(10, 0));
+/// // Layer to apply a timeout if configured
+/// let maybe_timeout = option_layer(timeout.map(TimeoutLayer::new));
+/// 
+/// ServiceBuilder::new()
+/// .layer(maybe_timeout)
+/// .service(svc);
+/// # }
+/// ```
+/// 
+/// [`Layer`]: crate::layer::Layer
+pub fn option_layer<L>(layer: Option<L>) -> Either<L, Identity> {
+ if let Some(layer) = layer { Either::Left(layer) } else { Either::Right(Identity::new()) }
+}
+

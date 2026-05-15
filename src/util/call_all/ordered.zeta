@@ -1,0 +1,51 @@
+// Auto-converted from /tmp/df-tower-0.5.3/tower-0.5.3/src/util/call_all/ordered.rs
+
+use super::common;
+use futures_core::Stream;
+use futures_util::stream::FuturesOrdered;
+use pin_project_lite::pin_project;
+use std::{ future::Future, pin::Pin, task::{ Context, Poll } };
+use tower_service::Service;
+pin_project ! { #[doc = " This is a [`Stream`] of responses resulting from calling the wrapped [`Service`] for each"] #[doc = " request received on the wrapped [`Stream`]."] #[doc = ""] #[doc = " ```rust"] #[doc = " # use std::task::{Poll, Context};"] #[doc = " # use std::cell::Cell;"] #[doc = " # use std::error::Error;"] #[doc = " # use std::rc::Rc;"] #[doc = " #"] #[doc = " use std::future::{ready, Ready};"] #[doc = " use futures::StreamExt;"] #[doc = " use futures::channel::mpsc;"] #[doc = " use tower_service::Service;"] #[doc = " use tower::util::ServiceExt;"] #[doc = ""] #[doc = " // First, we need to have a Service to process our requests."] #[doc = " #[derive(Debug, Eq, PartialEq)]"] #[doc = " struct FirstLetter;"] #[doc = " impl Service<&'static str> for FirstLetter {"] #[doc = " type Response = &'static str;"] #[doc = " type Error = Box<dyn Error + Send + Sync>;"] #[doc = " type Future = Ready<Result<Self::Response, Self::Error>>;"] #[doc = ""] #[doc = " fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {"] #[doc = " Poll::Ready(Ok(()))"] #[doc = " }"] #[doc = ""] #[doc = " fn call(&mut self, req: &'static str) -> Self::Future {"] #[doc = " ready(Ok(&req[..1]))"] #[doc = " }"] #[doc = " }"] #[doc = ""] #[doc = " #[tokio::main]"] #[doc = " async fn main() {"] #[doc = " // Next, we need a Stream of requests."] #[doc = " let(mut reqs, rx) = mpsc::unbounded();"] #[doc = " // Note that we have to help Rust out here by telling it what error type to use."] #[doc = " // Specifically, it has to be From<Service::Error> + From<Stream::Error>."] #[doc = " let mut rsps = FirstLetter.call_all(rx);"] #[doc = ""] #[doc = " // Now, let's send a few requests and then check that we get the corresponding responses."] #[doc = " reqs.unbounded_send(\"one\").unwrap();"] #[doc = " reqs.unbounded_send(\"two\").unwrap();"] #[doc = " reqs.unbounded_send(\"three\").unwrap();"] #[doc = " drop(reqs);"] #[doc = ""] #[doc = " // We then loop over the response `Stream` that we get back from call_all."] #[doc = " let mut i = 0usize;"] #[doc = " while let Some(rsp) = rsps.next().await {"] #[doc = " // Each response is a Result(we could also have used TryStream::try_next)"] #[doc = " match(i + 1, rsp.unwrap()) {"] #[doc = " (1, \"o\") |"] #[doc = " (2, \"t\") |"] #[doc = " (3, \"t\") => {}"] #[doc = " (n, i) => {"] #[doc = " unreachable!(\"{}. response was '{}'\", n, i);"] #[doc = " }"] #[doc = " }"] #[doc = " i += 1;"] #[doc = " }"] #[doc = ""] #[doc = " // And at the end, we can get the Service back when there are no more requests."] #[doc = " assert_eq!(rsps.into_inner(), FirstLetter);"] #[doc = " }"] #[doc = " ```"] #[doc = ""] #[doc = " [`Stream`]: https://docs.rs/futures/latest/futures/stream/trait.Stream.html"] #[derive(Debug)] pub struct CallAll<Svc, S> where Svc : Service<S::Item>, S : Stream, { #[pin] inner : common::CallAll < Svc, S, FuturesOrdered<Svc::Future>> } }
+impl<Svc, S> CallAll<Svc, S> where Svc: Service<S::Item>, S: Stream {
+ pub fn new(service: Svc, stream: S) -> CallAll<Svc, S> {
+ CallAll { inner: common::CallAll::new(service, stream, FuturesOrdered::new()) }
+ }
+ 
+ pub fn into_inner(self) -> Svc {
+ self.inner.into_inner()
+ }
+ 
+ pub fn take_service(self) -> Svc {
+ self.project().inner.take_service()
+ }
+ 
+ pub fn unordered(self) -> super::CallAllUnordered<Svc, S> {
+ self.inner.unordered()
+ }
+ 
+}
+
+impl<Svc, S> Stream for CallAll<Svc, S> where Svc: Service<S::Item>, S: Stream {
+ type Item = Result<Svc::Response, Svc::Error>;
+ fn poll_next(self, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+ self.project().inner.poll_next(cx)
+ }
+ 
+}
+
+impl<F: Future> common::Drive<F> for FuturesOrdered<F> {
+ fn is_empty(&self) -> bool {
+ FuturesOrdered::is_empty(self)
+ }
+ 
+ fn push(&mut self, future: F) {
+ FuturesOrdered::push_back(self, future)
+ }
+ 
+ fn poll(&mut self, cx: &mut Context<'_>) -> Poll<Option<F::Output>> {
+ Stream::poll_next(Pin::new(self), cx)
+ }
+ 
+}
+

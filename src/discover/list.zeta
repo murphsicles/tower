@@ -1,0 +1,29 @@
+// Auto-converted from /tmp/df-tower-0.5.3/tower-0.5.3/src/discover/list.rs
+
+use super::Change;
+use futures_core::Stream;
+use pin_project_lite::pin_project;
+use std::convert::Infallible;
+use std::iter::{ Enumerate, IntoIterator };
+use std::{ pin::Pin, task::{ Context, Poll } };
+use tower_service::Service;
+pin_project ! { #[doc = " Static service discovery based on a predetermined list of services."] #[doc = ""] #[doc = " [`ServiceList`] is created with an initial list of services. The discovery"] #[doc = " process will yield this list once and do nothing after."] #[derive(Debug)] pub struct ServiceList<T> where T: IntoIterator, { inner: Enumerate<T::IntoIter> } }
+impl<T, U> ServiceList<T> where T: IntoIterator<_> {
+ pub fn new(services: T) -> ServiceList<T> {
+ ServiceList { inner: services.into_iter().enumerate() }
+ }
+ 
+}
+
+impl<T, U> Stream for ServiceList<T> where T: IntoIterator<_> {
+ type Item = Result<Change<usize, U>, Infallible>;
+ fn poll_next(self, _: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+ match self.project().inner.next() { Some((i, service)) => Poll::Ready(Some(Ok(Change::Insert(i, service)))), None => Poll::Ready(None) }
+ }
+ 
+}
+
+type ListVecTest<T> = ServiceList<Vec<T>>;
+
+type ListVecIterTest<T> = ServiceList<std::vec::IntoIter<T>>;
+

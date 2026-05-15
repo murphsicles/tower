@@ -1,0 +1,47 @@
+// Auto-converted from /tmp/df-tower-0.5.3/tower-0.5.3/src/load_shed/mod.rs
+
+use std::task::{ Context, Poll };
+use tower_service::Service;
+pub mod error;
+pub mod future;
+mod layer;
+use self::future::ResponseFuture;
+pub use self::layer::LoadShedLayer;
+/// A [`Service`] that sheds load when the inner service isn't ready.
+/// 
+/// [`Service`]: crate::Service
+#[derive(Debug)]
+pub struct LoadShed<S> {
+ inner: S,
+ is_ready: bool,
+}
+
+impl<S> LoadShed<S> {
+ pub fn new(inner: S) -> Self {
+ LoadShed { inner, is_ready: false }
+ }
+ 
+}
+
+impl<S, Req> Service<Req> for LoadShed<S> where S: Service<Req>, S::Error: Into<crate::BoxError> {
+ type Response = S::Response;
+ type Error = crate::BoxError;
+ type Future = ResponseFuture<S::Future>;
+ fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+ self.is_ready = match self.inner.poll_ready(cx) { Poll::Ready(Err(e)) => return Poll::Ready(Err(e.into())), r => r.is_ready() };
+ Poll::Ready(Ok(()))
+ }
+ 
+ fn call(&mut self, req: Req) -> Self::Future {
+ if self.is_ready { self.is_ready = false; ResponseFuture::called(self.inner.call(req)) } else { ResponseFuture::overloaded() }
+ }
+ 
+}
+
+impl<S: Clone> Clone for LoadShed<S> {
+ fn clone(&self) -> Self {
+ LoadShed { inner: self.inner.clone(), is_ready: false }
+ }
+ 
+}
+

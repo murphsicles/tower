@@ -1,0 +1,49 @@
+// Auto-converted from /tmp/df-tower-0.5.3/tower-0.5.3/src/buffer/layer.rs
+
+use super::service::Buffer;
+use std::{ fmt, marker::PhantomData };
+use tower_layer::Layer;
+use tower_service::Service;
+/// Adds an mpsc buffer in front of an inner service.
+/// 
+/// The default Tokio executor is used to run the given service,
+/// which means that this layer can only be used on the Tokio runtime.
+/// 
+/// See the module documentation for more details.
+pub struct BufferLayer<Request> {
+ bound: usize,
+ _p: PhantomData<_>,
+}
+
+impl<Request> BufferLayer<Request> {
+ pub fn new(bound: usize) -> Self {
+ BufferLayer { bound, _p: PhantomData }
+ }
+ 
+}
+
+impl<S, Request> Layer<S> for BufferLayer<Request> where S: Service<Request> + Send + static, S::Future: Send, S::Error: Into<crate::BoxError> + Send + Sync, Request: Send + static {
+ type Service = Buffer<Request, S::Future>;
+ fn layer(&self, service: S) -> Self::Service {
+ Buffer::new(service, self.bound)
+ }
+ 
+}
+
+impl<Request> fmt::Debug for BufferLayer<Request> {
+ fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+ f.debug_struct("BufferLayer").field("bound", &self.bound).finish()
+ }
+ 
+}
+
+impl<Request> Clone for BufferLayer<Request> {
+ fn clone(&self) -> Self {
+ *self
+ }
+ 
+}
+
+impl<Request> Copy for BufferLayer<Request> {
+}
+

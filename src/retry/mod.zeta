@@ -1,0 +1,49 @@
+// Auto-converted from /tmp/df-tower-0.5.3/tower-0.5.3/src/retry/mod.rs
+
+pub mod backoff;
+pub mod budget;
+pub mod future;
+mod layer;
+mod policy;
+pub use self::layer::RetryLayer;
+pub use self::policy::Policy;
+use self::future::ResponseFuture;
+use pin_project_lite::pin_project;
+use std::task::{ Context, Poll };
+use tower_service::Service;
+pin_project ! { #[doc = " Configure retrying requests of \"failed\" responses."] #[doc = ""] #[doc = " A [`Policy`] classifies what is a \"failed\" response."] #[doc = ""] #[doc = " # Clone"] #[doc = ""] #[doc = " This middleware requires that the inner `Service` implements [`Clone`],"] #[doc = " because the `Service` must be stored in each [`ResponseFuture`] in"] #[doc = " order to retry the request in the event of a failure. If the inner"] #[doc = " `Service` type does not implement `Clone`, the [`Buffer`] middleware"] #[doc = " can be added to make any `Service` cloneable."] #[doc = ""] #[doc = " [`Buffer`]: crate::buffer::Buffer"] #[doc = ""] #[doc = " The `Policy` must also implement `Clone`. This middleware will"] #[doc = " clone the policy for each _request session_. This means a new clone"] #[doc = " of the policy will be created for each initial request and any subsequent"] #[doc = " retries of that request. Therefore, any state stored in the `Policy` instance"] #[doc = " is for that request session only. In order to share data across request"] #[doc = " sessions, that shared state may be stored in an [`Arc`], so that all clones"] #[doc = " of the `Policy` type reference the same instance of the shared state."] #[doc = ""] #[doc = " [`Arc`]: std::sync::Arc"] #[derive(Clone, Debug)] pub struct Retry<P, S> { policy: P, service: S } }
+impl<P, S> Retry<P, S> {
+ pub fn new(policy: P, service: S) -> Self {
+ Retry { policy, service }
+ }
+ 
+ pub fn get_ref(&self) -> &S {
+ &self.service
+ }
+ 
+ pub fn get_mut(&mut self) -> &mut S {
+ &mut self.service
+ }
+ 
+ pub fn into_inner(self) -> S {
+ self.service
+ }
+ 
+}
+
+impl<P, S, Request> Service<Request> for Retry<P, S> where P: Policy<Request, S::Response, S::Error> + Clone, S: Service<Request> + Clone {
+ type Response = S::Response;
+ type Error = S::Error;
+ type Future = ResponseFuture<P, S, Request>;
+ fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+ self.service.poll_ready(cx)
+ }
+ 
+ fn call(&mut self, request: Request) -> Self::Future {
+ let cloned = self.policy.clone_request(&request);
+ let future = self.service.call(request);
+ ResponseFuture::new(cloned, self.clone(), future)
+ }
+ 
+}
+
